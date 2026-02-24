@@ -1,0 +1,13 @@
+{
+  "name": "gophercall-signaling",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/signaling-server.js",
+    "start": "NODE_ENV=production node src/signaling-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
