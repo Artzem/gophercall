@@ -152,7 +152,8 @@ input {
 }
 
 .auth-grid input[type="text"],
-.auth-grid input[type="email"] {
+.auth-grid input[type="email"],
+.room-input {
   width: 100%;
   border-radius: 0.8rem;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -403,6 +404,12 @@ input {
     linear-gradient(135deg, rgba(122, 0, 25, 0.12), rgba(255, 255, 255, 0.01));
 }
 
+.video-feed--media {
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
 .video-overlay {
   position: absolute;
   inset: auto 0 0 0;
@@ -530,6 +537,24 @@ input {
 
 .chat-compose input:disabled {
   opacity: 0.6;
+}
+
+.mini-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.room-input {
+  width: 100%;
+  margin-bottom: 0.55rem;
+}
+
+.room-link {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+  margin: 0 0 0.75rem;
 }
 
 @media (max-width: 1080px) {

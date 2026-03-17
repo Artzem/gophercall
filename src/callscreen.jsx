@@ -22,6 +22,7 @@ function CallScreen({ session, onLogout }) {
   const [draft, setDraft] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [matchPeer, setMatchPeer] = useState(null)
+  const [isConnected, setIsConnected] = useState(false)
   const [mediaReady, setMediaReady] = useState(false)
 
   const localVideoRef = useRef(null)
@@ -62,6 +63,7 @@ function CallScreen({ session, onLogout }) {
     }
     peerIdRef.current = null
     setMatchPeer(null)
+    setIsConnected(false)
   }
 
   const stopLocalMedia = () => {
@@ -190,16 +192,17 @@ function CallScreen({ session, onLogout }) {
     }
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'connected') {
+      const state = pc.connectionState
+      if (state === 'connected') {
+        setIsConnected(true)
         setIsSearching(false)
         pushSystem(`Connected with ${peerMeta.name || 'another student'}.`)
       }
-      if (
-        pc.connectionState === 'failed' ||
-        pc.connectionState === 'disconnected' ||
-        pc.connectionState === 'closed'
-      ) {
-        resetRemoteMedia()
+      if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+        setIsConnected(false)
+        if (state === 'failed' || state === 'closed') {
+          resetRemoteMedia()
+        }
       }
     }
 
@@ -210,10 +213,8 @@ function CallScreen({ session, onLogout }) {
     if (!pcRef.current) {
       return
     }
-
     const queue = [...queuedIceRef.current]
     queuedIceRef.current = []
-
     for (const candidate of queue) {
       try {
         await pcRef.current.addIceCandidate(candidate)
@@ -230,7 +231,6 @@ function CallScreen({ session, onLogout }) {
     await flushQueuedIce()
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
-
     sendSignal({
       type: 'answer',
       targetId: message.fromId,
@@ -242,7 +242,6 @@ function CallScreen({ session, onLogout }) {
     if (!pcRef.current) {
       return
     }
-
     await pcRef.current.setRemoteDescription(new RTCSessionDescription(message.sdp))
     await flushQueuedIce()
   }
@@ -251,13 +250,11 @@ function CallScreen({ session, onLogout }) {
     if (!message.candidate) {
       return
     }
-
     const candidate = new RTCIceCandidate(message.candidate)
     if (!pcRef.current || !pcRef.current.remoteDescription) {
       queuedIceRef.current.push(candidate)
       return
     }
-
     try {
       await pcRef.current.addIceCandidate(candidate)
     } catch {
@@ -269,7 +266,6 @@ function CallScreen({ session, onLogout }) {
     const pc = await createPeerConnection(peerMeta)
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
-
     sendSignal({
       type: 'offer',
       targetId: peerMeta.id,
@@ -287,7 +283,7 @@ function CallScreen({ session, onLogout }) {
 
     if (message.type === 'queued') {
       setIsSearching(true)
-      pushSystem('Waiting for another verified student to join.')
+      pushSystem('Waiting for the next verified student to join.')
       return
     }
 
@@ -303,7 +299,7 @@ function CallScreen({ session, onLogout }) {
     }
 
     if (message.type === 'peer-left') {
-      pushSystem(`${message.peerName || 'Your match'} left the call.`)
+      pushSystem(`${message.peerName || 'Your match'} left. Rejoin to find another student.`)
       closePeerConnection()
       return
     }
@@ -314,7 +310,7 @@ function CallScreen({ session, onLogout }) {
     }
 
     if (message.type === 'error') {
-      pushSystem(message.message || 'Matchmaking error.')
+      pushSystem(message.message || 'Signaling error.')
       return
     }
 
@@ -365,6 +361,10 @@ function CallScreen({ session, onLogout }) {
   }
 
   const joinRandomCall = async () => {
+    if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+      pushSystem('Camera and mic need HTTPS or localhost.')
+    }
+
     try {
       await ensureLocalMedia()
     } catch (error) {
@@ -374,15 +374,11 @@ function CallScreen({ session, onLogout }) {
 
     leaveQueueAndCall()
     setMessages([])
+    pushSystem('Looking for a random verified UMN student...')
 
     const ws = ensureSocket()
-
-    const join = () => {
-      ws.send(JSON.stringify({ type: 'join-queue', name: session.user.displayName }))
-    }
-
     if (ws.readyState === WebSocket.OPEN) {
-      join()
+      ws.send(JSON.stringify({ type: 'join-queue', name: session.user.displayName }))
       return
     }
 
@@ -390,7 +386,7 @@ function CallScreen({ session, onLogout }) {
       if (!mountedRef.current) {
         return
       }
-      join()
+      ws.send(JSON.stringify({ type: 'join-queue', name: session.user.displayName }))
     }
   }
 
@@ -399,14 +395,9 @@ function CallScreen({ session, onLogout }) {
     joinRandomCall()
   }
 
-  const endCurrentCall = () => {
-    leaveQueueAndCall({ stopMedia: false })
-    pushSystem('Call ended.')
-  }
-
-  const leaveEverything = () => {
-    leaveQueueAndCall({ stopMedia: true })
-    setMessages([])
+  const leaveRandomCall = () => {
+    leaveQueueAndCall()
+    pushSystem('You left the queue.')
   }
 
   const sendMessage = (event) => {
@@ -423,13 +414,15 @@ function CallScreen({ session, onLogout }) {
     })
 
     if (!ok) {
-      pushSystem('Message send failed because the call is not connected.')
+      pushSystem('Message send failed because you are not connected.')
       return
     }
 
     pushChat('you', text)
     setDraft('')
   }
+
+  const remoteName = matchPeer?.name || (isSearching ? 'Searching queue...' : 'No one connected')
 
   return (
     <section className="call-layout">
@@ -444,8 +437,20 @@ function CallScreen({ session, onLogout }) {
         <div className="card-lite">
           <h3>Random UMN Call</h3>
           <p className="muted">
-            Join the live queue. If only one other student is waiting, you will get that person.
+            Press join and the server pairs you with the next verified student waiting in queue.
           </p>
+        </div>
+
+        <div className="card-lite">
+          <h3>Your Filters</h3>
+          <div className="chip-wrap">
+            <span className="chip">UMN verified</span>
+            <span className="chip">18+</span>
+            {session.user.major ? <span className="chip">{session.user.major}</span> : null}
+            {session.user.interests.map((interest) => (
+              <span className="chip" key={interest}>{interest}</span>
+            ))}
+          </div>
         </div>
 
         <div className="stack-actions">
@@ -455,7 +460,7 @@ function CallScreen({ session, onLogout }) {
             </button>
           ) : null}
           {isSearching ? (
-            <button className="primary-btn" type="button" onClick={leaveEverything}>
+            <button className="primary-btn" type="button" onClick={leaveRandomCall}>
               Leave Queue
             </button>
           ) : null}
@@ -464,9 +469,9 @@ function CallScreen({ session, onLogout }) {
               Next Random Call
             </button>
           ) : null}
-          {mediaReady || matchPeer ? (
-            <button className="ghost-btn" type="button" onClick={leaveEverything}>
-              Leave Call
+          {matchPeer ? (
+            <button className="ghost-btn" type="button" onClick={leaveRandomCall}>
+              End Call
             </button>
           ) : null}
           <button className="ghost-btn" type="button" onClick={onLogout}>
@@ -479,11 +484,11 @@ function CallScreen({ session, onLogout }) {
         <header className="glass-panel stage-header">
           <div>
             <p className="eyebrow">Campus Random Chat</p>
-            <h2>{matchPeer ? `Connected with ${matchPeer.name}` : (isSearching ? 'Searching for a match' : 'Ready to match')}</h2>
+            <h2>{matchPeer ? `Connected with ${matchPeer.name}` : (isSearching ? 'Looking for a match' : 'Ready to match')}</h2>
             <p className="muted">
               {matchPeer
-                ? 'Live peer-to-peer video call.'
-                : (isSearching ? 'Waiting for another verified student to join the queue.' : 'No live match yet.')}
+                ? 'Matched live from the random queue.'
+                : (isSearching ? 'You are in line. If your friend is the only other student waiting, you will be paired with them.' : 'Join the queue to be paired with another verified UMN student.')}
             </p>
           </div>
           <div className="header-actions">
@@ -493,9 +498,9 @@ function CallScreen({ session, onLogout }) {
             <button className="ghost-btn" type="button">
               Block
             </button>
-            {mediaReady || matchPeer || isSearching ? (
-              <button className="ghost-btn" type="button" onClick={leaveEverything}>
-                Leave
+            {matchPeer ? (
+              <button className="ghost-btn" type="button" onClick={leaveRandomCall}>
+                End
               </button>
             ) : null}
           </div>
@@ -513,11 +518,11 @@ function CallScreen({ session, onLogout }) {
           </div>
 
           <div className="video-card glass-panel">
-            <div className={`video-feed video-feed--media ${matchPeer ? 'video-feed--live' : ''}`}>
+            <div className={`video-feed video-feed--media ${matchPeer || isConnected ? 'video-feed--live' : ''}`}>
               <video ref={remoteVideoRef} autoPlay playsInline className="video-element" />
               <div className="video-overlay">
                 <span className="badge">{matchPeer ? 'Match' : 'Waiting'}</span>
-                <p>{matchPeer ? matchPeer.name : 'No one connected'}</p>
+                <p>{remoteName}</p>
               </div>
             </div>
           </div>
@@ -525,12 +530,21 @@ function CallScreen({ session, onLogout }) {
 
         <div className="bottom-grid">
           <section className="glass-panel info-panel">
-            <h3>{matchPeer ? 'Live queue match' : 'Queue state'}</h3>
-            <ul className="prompt-list">
-              <li>{isSearching ? 'You are currently in the live queue.' : 'You are not in the queue.'}</li>
-              <li>If nobody else is online, no match is created.</li>
-              <li>If several people are waiting, the server pairs them randomly into 1:1 calls.</li>
-            </ul>
+            <h3>{matchPeer ? `${matchPeer.name} joined from queue` : 'Queue state'}</h3>
+            {matchPeer ? (
+              <ul className="prompt-list">
+                <li>You were paired from the current live queue.</li>
+                <li>Press next to disconnect and re-enter the queue.</li>
+                <li>Messages and video only exist while this live call is active.</li>
+              </ul>
+            ) : (
+              <ul className="prompt-list">
+                <li>{isSearching ? 'You are in the live queue now.' : 'You are not in the queue.'}</li>
+                <li>If one other student is waiting, you will be paired with that person.</li>
+                <li>If multiple students are waiting, the server pairs them randomly into 1:1 calls.</li>
+                <li>If no one else is online, no match is created until someone joins.</li>
+              </ul>
+            )}
           </section>
 
           <section className="glass-panel chat-panel">

@@ -37,6 +37,7 @@ To make this a real UMN-only Omegle-style app with fewer security issues, you ne
 - `server/Dockerfile`
 - `.github/workflows/ci.yml` (lint/test/security scan)
 - `server/openapi.json` (optional but useful for clients and testing)
+- `server/README.md` (local run instructions for signaling + room calls)
 
 ## Security-specific extras worth adding
 
