@@ -1,7 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import allowedEmailDomains from './config/allowedEmailDomains.json'
-
-const MAX_INTERESTS = 5
 
 function normalizeEmail(email) {
   return email.trim().toLowerCase()
@@ -21,24 +19,12 @@ function Login({ onVerified }) {
     email: '',
     code: '',
     displayName: '',
-    major: '',
-    interests: '',
     agree18: false,
     agreeRules: false,
   })
   const [step, setStep] = useState('email')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
-
-  const parsedInterests = useMemo(
-    () =>
-      form.interests
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .slice(0, MAX_INTERESTS),
-    [form.interests],
-  )
 
   const onField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -92,8 +78,6 @@ function Login({ onVerified }) {
     onVerified({
       email: normalizeEmail(form.email),
       displayName,
-      major: form.major.trim().slice(0, 60),
-      interests: parsedInterests,
     })
   }
 
@@ -139,28 +123,6 @@ function Login({ onVerified }) {
                   value={form.displayName}
                   onChange={(e) => onField('displayName', e.target.value)}
                   maxLength={24}
-                />
-              </label>
-
-              <label>
-                Major (optional)
-                <input
-                  type="text"
-                  placeholder="Computer Science"
-                  value={form.major}
-                  onChange={(e) => onField('major', e.target.value)}
-                  maxLength={60}
-                />
-              </label>
-
-              <label>
-                Interests (comma-separated)
-                <input
-                  type="text"
-                  placeholder="AI, study groups, basketball"
-                  value={form.interests}
-                  onChange={(e) => onField('interests', e.target.value)}
-                  maxLength={120}
                 />
               </label>
 

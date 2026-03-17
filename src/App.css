@@ -1,9 +1,11 @@
 :root {
   --maroon: #7a0019;
   --gold: #ffcc33;
+  --maroon-deep: #520012;
+  --gold-soft: #ffd75a;
   --ink: #f7f5ef;
   --panel: rgba(19, 17, 24, 0.66);
-  --panel-border: rgba(255, 255, 255, 0.12);
+  --panel-border: rgba(255, 204, 51, 0.18);
   --text: #f6f4ee;
   --muted: rgba(246, 244, 238, 0.72);
   --danger: #ff6d6d;
@@ -20,11 +22,11 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--text);
   background:
-    radial-gradient(circle at 20% 15%, rgba(255, 204, 51, 0.16), transparent 40%),
-    radial-gradient(circle at 80% 20%, rgba(122, 0, 25, 0.36), transparent 42%),
-    radial-gradient(circle at 50% 80%, rgba(70, 110, 255, 0.18), transparent 50%),
-    #08080b;
+    radial-gradient(circle at 16% 14%, rgba(255, 204, 51, 0.2), transparent 34%),
+    radial-gradient(circle at 82% 10%, rgba(122, 0, 25, 0.44), transparent 38%),
+    linear-gradient(160deg, #14080b 0%, #22060d 42%, #12090a 100%);
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 a {
@@ -38,7 +40,9 @@ input {
 
 .app-shell {
   min-height: 100vh;
-  padding: 1.25rem;
+  padding: 1rem;
+  max-width: 1560px;
+  margin: 0 auto;
 }
 
 .hero {
@@ -69,7 +73,9 @@ input {
 }
 
 .glass-panel {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  background:
+    linear-gradient(180deg, rgba(122, 0, 25, 0.14), rgba(255, 204, 51, 0.04)),
+    rgba(18, 10, 10, 0.78);
   border: 1px solid var(--panel-border);
   border-radius: 1rem;
   backdrop-filter: blur(18px);
@@ -121,8 +127,8 @@ input {
 }
 
 .badge--secure {
-  border-color: rgba(255, 204, 51, 0.3);
-  background: rgba(255, 204, 51, 0.09);
+  border-color: rgba(255, 204, 51, 0.45);
+  background: rgba(255, 204, 51, 0.12);
 }
 
 .security-note {
@@ -183,7 +189,7 @@ input {
 
 .primary-btn {
   color: #2a1200;
-  background: linear-gradient(135deg, #ffcc33, #ffb400);
+  background: linear-gradient(135deg, var(--gold-soft), #f5b000);
   font-weight: 700;
 }
 
@@ -198,8 +204,8 @@ input {
 
 .ghost-btn {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(122, 0, 25, 0.18);
+  border-color: rgba(255, 204, 51, 0.14);
 }
 
 .ghost-btn:hover {
@@ -242,10 +248,14 @@ input {
 }
 
 .call-layout {
-  min-height: calc(100vh - 2.5rem);
+  min-height: min(820px, calc(100vh - 2rem));
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 1rem;
+  max-width: 1440px;
+  margin: 0 auto;
+  align-items: start;
+  overflow: hidden;
 }
 
 .left-rail {
@@ -253,6 +263,7 @@ input {
   display: grid;
   align-content: start;
   gap: 1rem;
+  min-width: 0;
 }
 
 .left-rail__top h2 {
@@ -266,8 +277,8 @@ input {
 
 .card-lite {
   border-radius: 0.9rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 204, 51, 0.12);
+  background: linear-gradient(180deg, rgba(255, 204, 51, 0.04), rgba(122, 0, 25, 0.12));
   padding: 0.9rem;
 }
 
@@ -320,6 +331,7 @@ input {
   display: grid;
   gap: 1rem;
   align-content: start;
+  min-width: 0;
 }
 
 .stage-header {
@@ -342,23 +354,35 @@ input {
 
 .video-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1rem;
+  min-width: 0;
 }
 
 .video-card {
   padding: 0.75rem;
+  min-width: 0;
 }
 
 .video-feed {
-  min-height: 270px;
+  min-height: 260px;
+  aspect-ratio: 16 / 9;
+  width: 100%;
   border-radius: 0.8rem;
   background:
-    radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.08), transparent 45%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
-  border: 1px solid rgba(255, 255, 255, 0.08);
+    radial-gradient(circle at 25% 25%, rgba(255, 204, 51, 0.08), transparent 45%),
+    linear-gradient(135deg, rgba(122, 0, 25, 0.14), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 204, 51, 0.1);
   position: relative;
   overflow: hidden;
+}
+
+.video-element {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: #14080b;
 }
 
 .video-feed::before {
@@ -374,9 +398,9 @@ input {
 
 .video-feed--live {
   background:
-    radial-gradient(circle at 75% 20%, rgba(255, 204, 51, 0.12), transparent 35%),
-    radial-gradient(circle at 25% 80%, rgba(122, 0, 25, 0.28), transparent 40%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01));
+    radial-gradient(circle at 75% 20%, rgba(255, 204, 51, 0.15), transparent 35%),
+    radial-gradient(circle at 25% 80%, rgba(122, 0, 25, 0.34), transparent 40%),
+    linear-gradient(135deg, rgba(122, 0, 25, 0.12), rgba(255, 255, 255, 0.01));
 }
 
 .video-overlay {
@@ -399,6 +423,7 @@ input {
   display: grid;
   grid-template-columns: 0.95fr 1.05fr;
   gap: 1rem;
+  min-width: 0;
 }
 
 .info-panel,
@@ -425,6 +450,7 @@ input {
   grid-template-rows: 1fr auto;
   gap: 0.85rem;
   min-height: 260px;
+  min-width: 0;
 }
 
 .chat-log {
@@ -435,6 +461,7 @@ input {
   overflow: auto;
   display: grid;
   gap: 0.65rem;
+  min-width: 0;
 }
 
 .chat-row {
@@ -468,6 +495,18 @@ input {
   color: var(--muted);
 }
 
+.empty-state {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
 .chat-sender {
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -496,6 +535,7 @@ input {
 @media (max-width: 1080px) {
   .call-layout {
     grid-template-columns: 1fr;
+    min-height: auto;
   }
 
   .bottom-grid,
