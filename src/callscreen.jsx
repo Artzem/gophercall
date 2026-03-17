@@ -1,36 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-
-const starterPrompts = [
-  'What are you building this semester?',
-  'What is your hardest class right now?',
-  'Best coffee spot near campus?',
-  'Would you join a late-night study room?',
-]
+import { useEffect, useRef, useState } from 'react'
 
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
   ],
-}
-
-function safeRoomId() {
-  if (globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID().slice(0, 8)
-  }
-  return Math.random().toString(36).slice(2, 10)
-}
-
-function parseRoomId() {
-  const params = new URLSearchParams(window.location.search)
-  const room = (params.get('room') || '').trim().toLowerCase()
-  return /^[a-z0-9-]{4,40}$/.test(room) ? room : ''
-}
-
-function roomUrl(roomId) {
-  const url = new URL(window.location.href)
-  url.searchParams.set('room', roomId)
-  return url.toString()
 }
 
 function getSignalingUrl() {
@@ -43,23 +17,13 @@ function getSignalingUrl() {
   return `${protocol}//${window.location.hostname}:3001`
 }
 
-function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }) {
-  const [messages, setMessages] = useState([
-    { id: 1, sender: 'system', text: 'Verified UMN students only. Be respectful.' },
-  ])
+function CallScreen({ session, onLogout }) {
+  const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
-  const [callMode, setCallMode] = useState('random')
-  const [roomId, setRoomId] = useState(() => parseRoomId())
-  const [shareCopied, setShareCopied] = useState(false)
-  const [mediaState, setMediaState] = useState('idle')
-  const [signalState, setSignalState] = useState('offline')
-  const [rtcState, setRtcState] = useState('disconnected')
-  const [roomPeer, setRoomPeer] = useState(null)
-  const [roomChatDraft, setRoomChatDraft] = useState('')
-  const [roomMessages, setRoomMessages] = useState([
-    { id: 'rs-1', sender: 'system', text: 'Create a room link and share it with one UMN student.' },
-  ])
-  const [roomConnected, setRoomConnected] = useState(false)
+  const [isSearching, setIsSearching] = useState(false)
+  const [matchPeer, setMatchPeer] = useState(null)
+  const [isConnected, setIsConnected] = useState(false)
+  const [mediaReady, setMediaReady] = useState(false)
 
   const localVideoRef = useRef(null)
   const remoteVideoRef = useRef(null)
@@ -67,63 +31,24 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
   const remoteStreamRef = useRef(null)
   const wsRef = useRef(null)
   const pcRef = useRef(null)
-  const clientIdRef = useRef(null)
   const peerIdRef = useRef(null)
   const queuedIceRef = useRef([])
   const mountedRef = useRef(true)
-
-  const queueStats = useMemo(
-    () => ({
-      online: 187,
-      videoReady: 94,
-      textOnly: 63,
-      waiting: 21,
-    }),
-    [],
-  )
 
   useEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
-      teardownRoomCall({ keepLocalMedia: false, clearUrl: false })
-      stopLocalMedia()
+      leaveQueueAndCall({ closeSocket: true, stopMedia: true })
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    if (!roomId) {
-      return
-    }
-    const current = parseRoomId()
-    if (current === roomId) {
-      return
-    }
-    const url = new URL(window.location.href)
-    url.searchParams.set('room', roomId)
-    window.history.replaceState({}, '', url.toString())
-  }, [roomId])
-
-  const pushRoomSystem = (text) => {
-    setRoomMessages((prev) => [...prev, { id: `sys-${Date.now()}-${Math.random()}`, sender: 'system', text }])
+  const pushSystem = (text) => {
+    setMessages((prev) => [...prev, { id: `sys-${Date.now()}-${Math.random()}`, sender: 'system', text }])
   }
 
-  const pushRoomChat = (sender, text) => {
-    setRoomMessages((prev) => [...prev, { id: `msg-${Date.now()}-${Math.random()}`, sender, text }])
-  }
-
-  const stopLocalMedia = () => {
-    if (localStreamRef.current) {
-      for (const track of localStreamRef.current.getTracks()) {
-        track.stop()
-      }
-      localStreamRef.current = null
-    }
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = null
-    }
-    setMediaState('idle')
+  const pushChat = (sender, text) => {
+    setMessages((prev) => [...prev, { id: `msg-${Date.now()}-${Math.random()}`, sender, text }])
   }
 
   const resetRemoteMedia = () => {
@@ -136,10 +61,22 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null
     }
-    setRoomPeer(null)
-    setRoomConnected(false)
     peerIdRef.current = null
-    setRtcState('disconnected')
+    setMatchPeer(null)
+    setIsConnected(false)
+  }
+
+  const stopLocalMedia = () => {
+    if (localStreamRef.current) {
+      for (const track of localStreamRef.current.getTracks()) {
+        track.stop()
+      }
+      localStreamRef.current = null
+    }
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null
+    }
+    setMediaReady(false)
   }
 
   const closePeerConnection = () => {
@@ -165,52 +102,43 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
       }
       wsRef.current = null
     }
-    clientIdRef.current = null
-    setSignalState('offline')
   }
 
-  const teardownRoomCall = ({ keepLocalMedia = true, clearUrl = false } = {}) => {
-    closePeerConnection()
-    closeSocket()
-    if (!keepLocalMedia) {
-      stopLocalMedia()
+  const leaveQueueAndCall = ({ closeSocket: shouldCloseSocket = false, stopMedia = false } = {}) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'leave' }))
     }
-    if (clearUrl) {
-      const url = new URL(window.location.href)
-      url.searchParams.delete('room')
-      window.history.replaceState({}, '', url.toString())
-      setRoomId('')
+    setIsSearching(false)
+    closePeerConnection()
+    if (shouldCloseSocket) {
+      closeSocket()
+    }
+    if (stopMedia) {
+      stopLocalMedia()
     }
   }
 
   const ensureLocalMedia = async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
-      setMediaState('error')
-      pushRoomSystem('This browser does not support camera/mic access.')
+      pushSystem('This browser does not support camera and mic access.')
       throw new Error('getUserMedia not supported')
     }
+
     if (localStreamRef.current) {
       return localStreamRef.current
     }
 
-    try {
-      setMediaState('requesting')
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-      })
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+    })
 
-      localStreamRef.current = stream
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream
-      }
-      setMediaState('ready')
-      return stream
-    } catch (error) {
-      setMediaState('error')
-      pushRoomSystem(`Camera/mic access failed: ${error.message}`)
-      throw error
+    localStreamRef.current = stream
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = stream
     }
+    setMediaReady(true)
+    return stream
   }
 
   const sendSignal = (payload) => {
@@ -238,8 +166,7 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
     const pc = new RTCPeerConnection(RTC_CONFIG)
     pcRef.current = pc
     peerIdRef.current = peerMeta.id
-    setRoomPeer({ id: peerMeta.id, name: peerMeta.name || 'Student' })
-    pushRoomSystem(`Connecting to ${peerMeta.name || 'student'}...`)
+    setMatchPeer({ id: peerMeta.id, name: peerMeta.name || 'Student' })
 
     for (const track of stream.getTracks()) {
       pc.addTrack(track, stream)
@@ -258,7 +185,6 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
       if (event.candidate && peerIdRef.current) {
         sendSignal({
           type: 'ice',
-          roomId,
           targetId: peerIdRef.current,
           candidate: event.candidate,
         })
@@ -267,13 +193,13 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
 
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState
-      setRtcState(state)
       if (state === 'connected') {
-        setRoomConnected(true)
-        pushRoomSystem('Video call connected.')
+        setIsConnected(true)
+        setIsSearching(false)
+        pushSystem(`Connected with ${peerMeta.name || 'another student'}.`)
       }
       if (state === 'failed' || state === 'disconnected' || state === 'closed') {
-        setRoomConnected(false)
+        setIsConnected(false)
       }
     }
 
@@ -290,7 +216,7 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
       try {
         await pcRef.current.addIceCandidate(candidate)
       } catch {
-        pushRoomSystem('Some network candidates failed to apply.')
+        pushSystem('A network candidate failed to apply.')
       }
     }
   }
@@ -304,7 +230,6 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
     await pc.setLocalDescription(answer)
     sendSignal({
       type: 'answer',
-      roomId,
       targetId: message.fromId,
       sdp: pc.localDescription,
     })
@@ -330,7 +255,7 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
     try {
       await pcRef.current.addIceCandidate(candidate)
     } catch {
-      pushRoomSystem('Unable to add one network candidate.')
+      pushSystem('A network candidate could not be added.')
     }
   }
 
@@ -340,58 +265,49 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
     await pc.setLocalDescription(offer)
     sendSignal({
       type: 'offer',
-      roomId,
       targetId: peerMeta.id,
       sdp: pc.localDescription,
     })
   }
 
-  const handleSignalMessage = async (raw) => {
+  const handleSignalMessage = async (event) => {
     let message
     try {
-      message = JSON.parse(raw.data)
+      message = JSON.parse(event.data)
     } catch {
       return
     }
 
-    if (message.type === 'joined') {
-      clientIdRef.current = message.clientId
-      setSignalState('joined')
-      pushRoomSystem(`Joined room ${message.roomId}.`)
-      if (message.peers?.length > 0) {
-        const peer = message.peers[0]
-        if (message.peers.length > 1) {
-          pushRoomSystem('This room already has more than one person. Use a new link for 1:1 calls.')
-        }
-        await startOfferToPeer(peer)
-      } else {
-        pushRoomSystem('Waiting for someone to open your link...')
-      }
+    if (message.type === 'queued') {
+      setIsSearching(true)
+      pushSystem('Waiting for the next verified student to join.')
       return
     }
 
-    if (message.type === 'peer-joined') {
-      if (peerIdRef.current) {
-        pushRoomSystem('Another user tried to join, but this room is already in use.')
-        return
+    if (message.type === 'matched') {
+      const peerMeta = { id: message.peer.id, name: message.peer.name }
+      setMatchPeer(peerMeta)
+      setIsSearching(false)
+      pushSystem(`Matched with ${peerMeta.name}. Starting call...`)
+      if (message.initiator) {
+        await startOfferToPeer(peerMeta)
       }
-      pushRoomSystem(`${message.peer.name || 'Student'} joined the room.`)
       return
     }
 
     if (message.type === 'peer-left') {
-      pushRoomSystem(`${message.peerName || 'Student'} left the room.`)
+      pushSystem(`${message.peerName || 'Your match'} left. Rejoin to find another student.`)
       closePeerConnection()
       return
     }
 
     if (message.type === 'chat') {
-      pushRoomChat(message.fromName || 'peer', String(message.text || '').slice(0, 280))
+      pushChat(message.fromName || 'peer', String(message.text || '').slice(0, 280))
       return
     }
 
     if (message.type === 'error') {
-      pushRoomSystem(message.message || 'Room signaling error.')
+      pushSystem(message.message || 'Signaling error.')
       return
     }
 
@@ -406,45 +322,17 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
         await handleIce(message)
       }
     } catch (error) {
-      pushRoomSystem(`WebRTC error: ${error.message}`)
+      pushSystem(`WebRTC error: ${error.message}`)
     }
   }
 
-  const joinRoomCall = async () => {
-    if (!roomId) {
-      pushRoomSystem('Create a room link first.')
-      return
-    }
-    if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-      pushRoomSystem('Camera/mic usually require HTTPS (or localhost).')
-    }
-    try {
-      await ensureLocalMedia()
-    } catch {
-      return
-    }
+  const ensureSocket = () => {
     if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
-      return
+      return wsRef.current
     }
-
-    closePeerConnection()
-    setSignalState('connecting')
 
     const ws = new WebSocket(getSignalingUrl())
     wsRef.current = ws
-
-    ws.onopen = () => {
-      if (!mountedRef.current) {
-        return
-      }
-      setSignalState('open')
-      sendSignal({
-        type: 'join',
-        roomId,
-        name: session.user.displayName,
-        email: session.user.email,
-      })
-    }
 
     ws.onmessage = (event) => {
       handleSignalMessage(event)
@@ -454,90 +342,84 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
       if (!mountedRef.current) {
         return
       }
-      setSignalState('error')
-      pushRoomSystem('Could not connect to signaling server.')
+      pushSystem('Could not connect to the random call server.')
+      setIsSearching(false)
     }
 
     ws.onclose = () => {
       if (!mountedRef.current) {
         return
       }
-      setSignalState('offline')
-      pushRoomSystem('Disconnected from signaling server.')
+      setIsSearching(false)
       closePeerConnection()
     }
+
+    return ws
   }
 
-  const leaveRoomCall = () => {
-    teardownRoomCall({ keepLocalMedia: false, clearUrl: false })
-    setRoomMessages((prev) => [...prev, { id: `sys-${Date.now()}`, sender: 'system', text: 'Left room call.' }])
-  }
+  const joinRandomCall = async () => {
+    if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+      pushSystem('Camera and mic need HTTPS or localhost.')
+    }
 
-  const createRoomLink = () => {
-    const next = safeRoomId()
-    setRoomId(next)
-    setCallMode('room')
-    setRoomMessages([
-      { id: 'rs-1', sender: 'system', text: 'Create a room link and share it with one UMN student.' },
-      { id: `sys-${Date.now()}`, sender: 'system', text: `Room created: ${next}` },
-    ])
-    setShareCopied(false)
-  }
-
-  const copyRoomLink = async () => {
-    if (!roomId) {
-      createRoomLink()
+    try {
+      await ensureLocalMedia()
+    } catch (error) {
+      pushSystem(`Camera or mic access failed: ${error.message}`)
       return
     }
-    try {
-      await navigator.clipboard.writeText(roomUrl(roomId))
-      setShareCopied(true)
-      pushRoomSystem('Invite link copied.')
-    } catch {
-      pushRoomSystem(`Copy failed. Share this manually: ${roomUrl(roomId)}`)
+
+    leaveQueueAndCall()
+    setMessages([])
+    pushSystem('Looking for a random verified UMN student...')
+
+    const ws = ensureSocket()
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'join-queue', name: session.user.displayName }))
+      return
     }
+
+    ws.onopen = () => {
+      if (!mountedRef.current) {
+        return
+      }
+      ws.send(JSON.stringify({ type: 'join-queue', name: session.user.displayName }))
+    }
+  }
+
+  const nextRandomCall = () => {
+    leaveQueueAndCall()
+    joinRandomCall()
+  }
+
+  const leaveRandomCall = () => {
+    leaveQueueAndCall()
+    pushSystem('You left the queue.')
   }
 
   const sendMessage = (event) => {
     event.preventDefault()
     const text = draft.trim().slice(0, 280)
-    if (!text) {
-      return
-    }
-
-    setMessages((prev) => [...prev, { id: Date.now(), sender: 'you', text }])
-    setDraft('')
-  }
-
-  const sendRoomMessage = (event) => {
-    event.preventDefault()
-    const text = roomChatDraft.trim().slice(0, 280)
     if (!text || !peerIdRef.current) {
       return
     }
+
     const ok = sendSignal({
       type: 'chat',
-      roomId,
       targetId: peerIdRef.current,
       text,
     })
+
     if (!ok) {
-      pushRoomSystem('Chat send failed: signaling is offline.')
+      pushSystem('Message send failed because you are not connected.')
       return
     }
-    pushRoomChat('you', text)
-    setRoomChatDraft('')
+
+    pushChat('you', text)
+    setDraft('')
   }
 
-  const nextMatch = () => {
-    onEndMatch()
-    onStartMatch()
-    setMessages([
-      { id: 1, sender: 'system', text: 'New match connected. Keep it friendly.' },
-    ])
-  }
-
-  const activeRemoteName = roomPeer?.name || (roomConnected ? 'Connected student' : 'Waiting')
+  const remoteName = matchPeer?.name || (isSearching ? 'Searching queue...' : 'No one connected')
 
   return (
     <section className="call-layout">
@@ -550,130 +432,60 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
         </div>
 
         <div className="card-lite">
-          <h3>Mode</h3>
-          <div className="stack-actions">
-            <button
-              className={callMode === 'random' ? 'primary-btn' : 'ghost-btn'}
-              type="button"
-              onClick={() => setCallMode('random')}
-            >
-              Random UMN Chat
-            </button>
-            <button
-              className={callMode === 'room' ? 'primary-btn' : 'ghost-btn'}
-              type="button"
-              onClick={() => setCallMode('room')}
-            >
-              Share Link Call
-            </button>
+          <h3>Random UMN Call</h3>
+          <p className="muted">
+            Press join and the server pairs you with the next verified student waiting in queue.
+          </p>
+        </div>
+
+        <div className="card-lite">
+          <h3>Your Filters</h3>
+          <div className="chip-wrap">
+            <span className="chip">UMN verified</span>
+            <span className="chip">18+</span>
+            {session.user.major ? <span className="chip">{session.user.major}</span> : null}
+            {session.user.interests.map((interest) => (
+              <span className="chip" key={interest}>{interest}</span>
+            ))}
           </div>
         </div>
 
-        {callMode === 'random' ? (
-          <>
-            <div className="card-lite">
-              <h3>Queue Status</h3>
-              <ul className="stats-list">
-                <li><span>Online</span><strong>{queueStats.online}</strong></li>
-                <li><span>Video-ready</span><strong>{queueStats.videoReady}</strong></li>
-                <li><span>Text-only</span><strong>{queueStats.textOnly}</strong></li>
-                <li><span>Waiting now</span><strong>{queueStats.waiting}</strong></li>
-              </ul>
-            </div>
-
-            <div className="card-lite">
-              <h3>Your Filters</h3>
-              <div className="chip-wrap">
-                <span className="chip">UMN verified</span>
-                <span className="chip">18+</span>
-                {session.user.major ? <span className="chip">{session.user.major}</span> : null}
-                {session.user.interests.map((interest) => (
-                  <span className="chip" key={interest}>{interest}</span>
-                ))}
-              </div>
-            </div>
-
-            <div className="stack-actions">
-              {!activeMatch ? (
-                <button className="primary-btn" type="button" onClick={onStartMatch}>
-                  Find a Gopher
-                </button>
-              ) : (
-                <button className="primary-btn" type="button" onClick={nextMatch}>
-                  Next Match
-                </button>
-              )}
-              <button className="ghost-btn" type="button" onClick={onLogout}>
-                Log out
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="card-lite">
-              <h3>Shareable Room</h3>
-              <label className="mini-label" htmlFor="room-id-input">Room ID</label>
-              <input
-                id="room-id-input"
-                className="room-input"
-                type="text"
-                value={roomId}
-                onChange={(e) => setRoomId(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40))}
-                placeholder="ex: gophers26"
-              />
-              <p className="muted room-link">
-                {roomId ? roomUrl(roomId) : 'Create a room to generate an invite URL.'}
-              </p>
-              <div className="stack-actions">
-                <button className="primary-btn" type="button" onClick={createRoomLink}>
-                  New Room Link
-                </button>
-                <button className="ghost-btn" type="button" onClick={copyRoomLink}>
-                  {shareCopied ? 'Copied' : 'Copy Invite Link'}
-                </button>
-                <button className="ghost-btn" type="button" onClick={joinRoomCall}>
-                  Join Room Call
-                </button>
-                <button className="ghost-btn" type="button" onClick={leaveRoomCall}>
-                  Leave Room
-                </button>
-              </div>
-            </div>
-
-            <div className="card-lite">
-              <h3>Call Status</h3>
-              <ul className="stats-list">
-                <li><span>Media</span><strong>{mediaState}</strong></li>
-                <li><span>Signaling</span><strong>{signalState}</strong></li>
-                <li><span>WebRTC</span><strong>{rtcState}</strong></li>
-                <li><span>Peer</span><strong>{roomPeer?.name || 'none'}</strong></li>
-              </ul>
-            </div>
-
-            <div className="stack-actions">
-              <button className="ghost-btn" type="button" onClick={onLogout}>
-                Log out
-              </button>
-            </div>
-          </>
-        )}
+        <div className="stack-actions">
+          {!isSearching && !matchPeer ? (
+            <button className="primary-btn" type="button" onClick={joinRandomCall}>
+              Join Random Call
+            </button>
+          ) : null}
+          {isSearching ? (
+            <button className="primary-btn" type="button" onClick={leaveRandomCall}>
+              Leave Queue
+            </button>
+          ) : null}
+          {matchPeer ? (
+            <button className="primary-btn" type="button" onClick={nextRandomCall}>
+              Next Random Call
+            </button>
+          ) : null}
+          {matchPeer ? (
+            <button className="ghost-btn" type="button" onClick={leaveRandomCall}>
+              End Call
+            </button>
+          ) : null}
+          <button className="ghost-btn" type="button" onClick={onLogout}>
+            Log out
+          </button>
+        </div>
       </aside>
 
       <div className="main-stage">
         <header className="glass-panel stage-header">
           <div>
-            <p className="eyebrow">{callMode === 'room' ? 'Share Link Video Call' : 'Campus Random Chat'}</p>
-            <h2>
-              {callMode === 'room'
-                ? (roomId ? `Room ${roomId}` : 'Create a room link')
-                : (activeMatch ? `Connected with ${activeMatch.name}` : 'Ready to match')}
-            </h2>
+            <p className="eyebrow">Campus Random Chat</p>
+            <h2>{matchPeer ? `Connected with ${matchPeer.name}` : (isSearching ? 'Looking for a match' : 'Ready to match')}</h2>
             <p className="muted">
-              {callMode === 'room'
-                ? 'Send the same URL to one other verified UMN student, then both click "Join Room Call".'
-                : (activeMatch
-                  ? `${activeMatch.major} • ${activeMatch.year} • ${activeMatch.campus}`
-                  : 'Press "Find a Gopher" to start a video or text session.')}
+              {matchPeer
+                ? 'Matched live from the random queue.'
+                : (isSearching ? 'You are in line. If your friend is the only other student waiting, you will be paired with them.' : 'Join the queue to be paired with another verified UMN student.')}
             </p>
           </div>
           <div className="header-actions">
@@ -683,14 +495,9 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
             <button className="ghost-btn" type="button">
               Block
             </button>
-            {callMode === 'random' && activeMatch ? (
-              <button className="ghost-btn" type="button" onClick={onEndMatch}>
+            {matchPeer ? (
+              <button className="ghost-btn" type="button" onClick={leaveRandomCall}>
                 End
-              </button>
-            ) : null}
-            {callMode === 'room' ? (
-              <button className="ghost-btn" type="button" onClick={leaveRoomCall}>
-                Leave Call
               </button>
             ) : null}
           </div>
@@ -699,32 +506,20 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
         <div className="video-grid">
           <div className="video-card glass-panel">
             <div className="video-feed video-feed--media">
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="video-element"
-              />
+              <video ref={localVideoRef} autoPlay playsInline muted className="video-element" />
               <div className="video-overlay">
                 <span className="badge">You</span>
                 <p>{session.user.displayName}</p>
               </div>
             </div>
           </div>
+
           <div className="video-card glass-panel">
-            <div className={`video-feed video-feed--media ${(callMode === 'room' && roomConnected) || activeMatch ? 'video-feed--live' : ''}`}>
-              {callMode === 'room' ? (
-                <video
-                  ref={remoteVideoRef}
-                  autoPlay
-                  playsInline
-                  className="video-element"
-                />
-              ) : null}
+            <div className={`video-feed video-feed--media ${matchPeer || isConnected ? 'video-feed--live' : ''}`}>
+              <video ref={remoteVideoRef} autoPlay playsInline className="video-element" />
               <div className="video-overlay">
-                <span className="badge">{callMode === 'room' ? (roomConnected ? 'Room' : 'Waiting') : (activeMatch ? 'Match' : 'Waiting')}</span>
-                <p>{callMode === 'room' ? activeRemoteName : (activeMatch ? activeMatch.name : 'Searching queue...')}</p>
+                <span className="badge">{matchPeer ? 'Match' : 'Waiting'}</span>
+                <p>{remoteName}</p>
               </div>
             </div>
           </div>
@@ -732,79 +527,52 @@ function CallScreen({ session, activeMatch, onStartMatch, onEndMatch, onLogout }
 
         <div className="bottom-grid">
           <section className="glass-panel info-panel">
-            {callMode === 'room' ? (
-              <>
-                <h3>How this works</h3>
-                <ul className="prompt-list">
-                  <li>Create a room link and copy it.</li>
-                  <li>Send the exact URL to one other UMN student.</li>
-                  <li>Both users verify email and click Join Room Call.</li>
-                  <li>Camera/mic require HTTPS or `localhost`.</li>
-                  <li>For reliable campus networks, add a TURN server (see docs).</li>
-                </ul>
-              </>
+            <h3>{matchPeer ? `${matchPeer.name} joined from queue` : 'Queue state'}</h3>
+            {matchPeer ? (
+              <ul className="prompt-list">
+                <li>You were paired from the current live queue.</li>
+                <li>Press next to disconnect and re-enter the queue.</li>
+                <li>Messages and video only exist while this live call is active.</li>
+              </ul>
             ) : (
-              <>
-                <h3>{activeMatch ? `${activeMatch.name}'s vibe` : 'Conversation starters'}</h3>
-                {activeMatch ? (
-                  <>
-                    <p className="muted">{activeMatch.bio}</p>
-                    <div className="chip-wrap">
-                      {activeMatch.vibe.map((tag) => (
-                        <span className="chip" key={tag}>{tag}</span>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <ul className="prompt-list">
-                    {starterPrompts.map((prompt) => (
-                      <li key={prompt}>{prompt}</li>
-                    ))}
-                  </ul>
-                )}
-              </>
+              <ul className="prompt-list">
+                <li>{isSearching ? 'You are in the live queue now.' : 'You are not in the queue.'}</li>
+                <li>If one other student is waiting, you will be paired with that person.</li>
+                <li>If multiple students are waiting, the server pairs them randomly into 1:1 calls.</li>
+                <li>If no one else is online, no match is created until someone joins.</li>
+              </ul>
             )}
           </section>
 
           <section className="glass-panel chat-panel">
             <div className="chat-log" aria-live="polite">
-              {(callMode === 'room' ? roomMessages : messages).map((message) => (
-                <div key={message.id} className={`chat-row chat-row--${message.sender}`}>
-                  <span className="chat-sender">{message.sender}</span>
-                  <p>{message.text}</p>
+              {messages.length > 0 ? (
+                messages.map((message) => (
+                  <div key={message.id} className={`chat-row chat-row--${message.sender}`}>
+                    <span className="chat-sender">{message.sender}</span>
+                    <p>{message.text}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="empty-state">
+                  <p>{matchPeer ? 'No messages yet.' : 'No live chat yet.'}</p>
                 </div>
-              ))}
+              )}
             </div>
 
-            {callMode === 'room' ? (
-              <form className="chat-compose" onSubmit={sendRoomMessage}>
-                <input
-                  type="text"
-                  placeholder={peerIdRef.current ? 'Send room chat message...' : 'Join the room and wait for a peer'}
-                  value={roomChatDraft}
-                  onChange={(e) => setRoomChatDraft(e.target.value)}
-                  maxLength={280}
-                  disabled={!peerIdRef.current}
-                />
-                <button className="primary-btn" type="submit" disabled={!peerIdRef.current}>
-                  Send
-                </button>
-              </form>
-            ) : (
-              <form className="chat-compose" onSubmit={sendMessage}>
-                <input
-                  type="text"
-                  placeholder={activeMatch ? 'Type a message...' : 'Match first to chat'}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  maxLength={280}
-                  disabled={!activeMatch}
-                />
-                <button className="primary-btn" type="submit" disabled={!activeMatch}>
-                  Send
-                </button>
-              </form>
-            )}
+            <form className="chat-compose" onSubmit={sendMessage}>
+              <input
+                type="text"
+                placeholder={matchPeer ? 'Type a message...' : (mediaReady ? 'Join the queue to chat' : 'Allow camera and mic first')}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                maxLength={280}
+                disabled={!matchPeer}
+              />
+              <button className="primary-btn" type="submit" disabled={!matchPeer}>
+                Send
+              </button>
+            </form>
           </section>
         </div>
       </div>

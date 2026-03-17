@@ -484,6 +484,18 @@ input {
   color: var(--muted);
 }
 
+.empty-state {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
 .chat-sender {
   font-size: 0.7rem;
   text-transform: uppercase;
