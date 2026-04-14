@@ -425,7 +425,7 @@ function CallScreen({ session, onLogout }) {
   const remoteName = matchPeer?.name || (isSearching ? 'Searching queue...' : 'No one connected')
 
   return (
-    <section className="call-layout">
+    <section className={`call-layout ${matchPeer ? 'call-layout--matched' : ''}`}>
       <aside className="left-rail glass-panel">
         <div className="left-rail__top">
           <p className="eyebrow">Signed In</p>
@@ -446,10 +446,6 @@ function CallScreen({ session, onLogout }) {
           <div className="chip-wrap">
             <span className="chip">UMN verified</span>
             <span className="chip">18+</span>
-            {session.user.major ? <span className="chip">{session.user.major}</span> : null}
-            {session.user.interests.map((interest) => (
-              <span className="chip" key={interest}>{interest}</span>
-            ))}
           </div>
         </div>
 
@@ -480,7 +476,7 @@ function CallScreen({ session, onLogout }) {
         </div>
       </aside>
 
-      <div className="main-stage">
+      <div className={`main-stage ${matchPeer ? 'main-stage--matched' : ''}`}>
         <header className="glass-panel stage-header">
           <div>
             <p className="eyebrow">Campus Random Chat</p>
@@ -506,7 +502,7 @@ function CallScreen({ session, onLogout }) {
           </div>
         </header>
 
-        <div className="video-grid">
+        <div className={`video-grid ${matchPeer ? 'video-grid--matched' : ''}`}>
           <div className="video-card glass-panel">
             <div className="video-feed video-feed--media">
               <video ref={localVideoRef} autoPlay playsInline muted className="video-element" />
@@ -528,25 +524,7 @@ function CallScreen({ session, onLogout }) {
           </div>
         </div>
 
-        <div className="bottom-grid">
-          <section className="glass-panel info-panel">
-            <h3>{matchPeer ? `${matchPeer.name} joined from queue` : 'Queue state'}</h3>
-            {matchPeer ? (
-              <ul className="prompt-list">
-                <li>You were paired from the current live queue.</li>
-                <li>Press next to disconnect and re-enter the queue.</li>
-                <li>Messages and video only exist while this live call is active.</li>
-              </ul>
-            ) : (
-              <ul className="prompt-list">
-                <li>{isSearching ? 'You are in the live queue now.' : 'You are not in the queue.'}</li>
-                <li>If one other student is waiting, you will be paired with that person.</li>
-                <li>If multiple students are waiting, the server pairs them randomly into 1:1 calls.</li>
-                <li>If no one else is online, no match is created until someone joins.</li>
-              </ul>
-            )}
-          </section>
-
+        <div className={`bottom-grid ${matchPeer ? 'bottom-grid--matched' : ''}`}>
           <section className="glass-panel chat-panel">
             <div className="chat-log" aria-live="polite">
               {messages.length > 0 ? (

@@ -1,7 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import allowedEmailDomains from './config/allowedEmailDomains.json'
-
-const MAX_INTERESTS = 5
 
 function normalizeEmail(email) {
   return email.trim().toLowerCase()
@@ -21,24 +19,12 @@ function Login({ onVerified }) {
     email: '',
     code: '',
     displayName: '',
-    major: '',
-    interests: '',
-    agree18: false,
-    agreeRules: false,
+    agreeTerms: false,
   })
   const [step, setStep] = useState('email')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
-
-  const parsedInterests = useMemo(
-    () =>
-      form.interests
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .slice(0, MAX_INTERESTS),
-    [form.interests],
-  )
+  const [isTermsOpen, setIsTermsOpen] = useState(false)
 
   const onField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -60,8 +46,8 @@ function Login({ onVerified }) {
       return
     }
 
-    if (!form.agree18 || !form.agreeRules) {
-      setError('Confirm age 18+ and community rules before continuing.')
+    if (!form.agreeTerms) {
+      setError('Please accept the Terms and Conditions before continuing.')
       return
     }
 
@@ -92,8 +78,6 @@ function Login({ onVerified }) {
     onVerified({
       email: normalizeEmail(form.email),
       displayName,
-      major: form.major.trim().slice(0, 60),
-      interests: parsedInterests,
     })
   }
 
@@ -142,44 +126,23 @@ function Login({ onVerified }) {
                 />
               </label>
 
-              <label>
-                Major (optional)
-                <input
-                  type="text"
-                  placeholder="Computer Science"
-                  value={form.major}
-                  onChange={(e) => onField('major', e.target.value)}
-                  maxLength={60}
-                />
-              </label>
-
-              <label>
-                Interests (comma-separated)
-                <input
-                  type="text"
-                  placeholder="AI, study groups, basketball"
-                  value={form.interests}
-                  onChange={(e) => onField('interests', e.target.value)}
-                  maxLength={120}
-                />
-              </label>
-
               <label className="checkbox-row">
                 <input
                   type="checkbox"
-                  checked={form.agree18}
-                  onChange={(e) => onField('agree18', e.target.checked)}
+                  checked={form.agreeTerms}
+                  onChange={(e) => onField('agreeTerms', e.target.checked)}
                 />
-                <span>I am 18+.</span>
-              </label>
-
-              <label className="checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={form.agreeRules}
-                  onChange={(e) => onField('agreeRules', e.target.checked)}
-                />
-                <span>I agree to no harassment, no doxxing, and no recording without consent.</span>
+                <span>
+                  I agree to the{' '}
+                  <button
+                    className="inline-link-btn"
+                    type="button"
+                    onClick={() => setIsTermsOpen(true)}
+                  >
+                    Terms and Conditions
+                  </button>
+                  .
+                </span>
               </label>
 
               <button className="primary-btn" type="submit">
@@ -225,6 +188,35 @@ function Login({ onVerified }) {
           </footer>
         </div>
       </div>
+
+      {isTermsOpen ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setIsTermsOpen(false)}>
+          <div
+            className="terms-modal glass-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="terms-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="terms-modal__header">
+              <h2 id="terms-title">Terms and Conditions</h2>
+              <button
+                className="ghost-btn"
+                type="button"
+                onClick={() => setIsTermsOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="terms-modal__body">
+              <p>You must be at least 18 years old and currently use an approved University of Minnesota email address.</p>
+              <p>Be respectful in every conversation. Harassment, hate speech, threats, doxxing, impersonation, and sexual coercion are not allowed.</p>
+              <p>Do not record, screenshot, or share private conversations without clear consent from everyone involved.</p>
+              <p>If you feel unsafe or see abuse, leave the call and report the behavior immediately.</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
